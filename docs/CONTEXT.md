@@ -238,6 +238,7 @@ These rules apply to every Claude Code session without exception.
 1. Commit after every completed and tested module
 2. Commit messages describe what was built and any corrections made
 3. Never commit broken or untested code
+4. Never run git commands — committing is always done by the user
 
 ---
 
@@ -256,7 +257,7 @@ Repository scaffolded. Virtual environment configured with Python 3.12.
   to_dict/from_dict, save/load. 33/33 tests passed.
 
 ### In Progress
-- Phase 1 MVP — World grid next
+- Phase 1 MVP — Road Network Graph
 
 ### Next Step
 Implement Road Network Graph in src/graph/

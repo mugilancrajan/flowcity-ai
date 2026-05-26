@@ -1,0 +1,2 @@
+class NoPathError (Exception):
+    pass
