@@ -258,10 +258,10 @@ Repository scaffolded. Virtual environment configured with Python 3.12.
 - src/graph/road_network.py — RoadNetwork class with DiGraph construction,
   get_path with NoPathError, rebuild. 22/22 tests passed.
 - src/exceptions.py — NoPathError custom exception.
-- src/vehicle/vehicle.py — Vehicle class, VehicleArchetype enum,
-  VehicleState enum. 25/25 tests passed.
-- src/vehicle/vehicle_spawner.py — VehicleSpawner with archetype configs,
-  variance sampling, and override support. 27/27 tests passed.
+- src/config.py — simulation-wide constants: tick timing, speed 
+  settings, movement scale, time periods, spawn rates, zone weights.
+- src/vehicle/vehicle.py — updated with spawn_tick read-only property.
+  54/54 tests passing across vehicle module.
 
 ### In Progress
 - Phase 1 MVP — Simulation engine
