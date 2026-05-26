@@ -91,6 +91,20 @@ Each src/ subfolder has an __init__.py making it an importable Python package.
 
 Congestion is derived: car_speed / speed_limit. Never stored.
 
+### Tile Default Values
+
+Speed limits by tile type (units: tiles per tick):
+- empty: 0
+- road: 3
+- highway: 6
+- residential: 1
+- commercial: 2
+- workplace: 2
+
+Capacity defaults:
+- residential, commercial, workplace: 10
+- road, highway, empty: 0
+
 ### Vehicle
 
     Vehicle
@@ -197,6 +211,17 @@ Full rationale for each decision in docs/DECISIONS.md.
 
 ## Current Status
 
-Planning and data structure design complete. Documentation written. Repository scaffolded. Ready to begin Phase 1 implementation.
+Planning and data structure design complete. Documentation written. 
+Repository scaffolded. Virtual environment configured with Python 3.12.
 
-Next step: Implement Tile class, World grid, and blank Pygame window.
+### Completed
+- Repository structure and all documentation stubs
+- DECISIONS.md with all 16 architectural decisions
+- CONTEXT.md established as living context document
+
+### In Progress
+- Phase 1 MVP — beginning now
+
+### Next Step
+Implement Tile class in src/world/tile.py per the approved data structure above.
+Claude Code briefing has been written. First coding session starting.
