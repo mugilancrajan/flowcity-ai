@@ -10,6 +10,7 @@ def make_vehicle(**kwargs):
         archetype=VehicleArchetype.normal,
         speed_multiplier=1.0,
         following_distance=1.5,
+        spawn_tick=0,
     )
     defaults.update(kwargs)
     return Vehicle(**defaults)
@@ -162,3 +163,14 @@ def test_set_following_distance_raises():
     v = make_vehicle()
     with pytest.raises(AttributeError):
         v.following_distance = 9.9
+
+
+def test_spawn_tick_returns_passed_value():
+    v = make_vehicle(spawn_tick=42)
+    assert v.spawn_tick == 42
+
+
+def test_set_spawn_tick_raises():
+    v = make_vehicle()
+    with pytest.raises(AttributeError):
+        v.spawn_tick = 99

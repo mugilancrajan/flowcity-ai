@@ -20,25 +20,25 @@ def test_all_four_archetypes_present_in_config():
 
 def test_create_returns_vehicle_instance():
     spawner = VehicleSpawner()
-    v = spawner.create(1, (0, 0), (5, 5))
+    v = spawner.create(1, (0, 0), (5, 5), spawn_tick=0)
     assert isinstance(v, Vehicle)
 
 
 def test_create_vehicle_id_matches():
     spawner = VehicleSpawner()
-    v = spawner.create(1, (0, 0), (5, 5))
+    v = spawner.create(1, (0, 0), (5, 5), spawn_tick=0)
     assert v.id == 1
 
 
 def test_create_vehicle_origin_matches():
     spawner = VehicleSpawner()
-    v = spawner.create(1, (0, 0), (5, 5))
+    v = spawner.create(1, (0, 0), (5, 5), spawn_tick=0)
     assert v.origin == (0, 0)
 
 
 def test_create_vehicle_destination_matches():
     spawner = VehicleSpawner()
-    v = spawner.create(1, (0, 0), (5, 5))
+    v = spawner.create(1, (0, 0), (5, 5), spawn_tick=0)
     assert v.destination == (5, 5)
 
 
@@ -47,28 +47,28 @@ def test_create_vehicle_destination_matches():
 def test_conservative_speed_multiplier_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.conservative)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.conservative, spawn_tick=0)
         assert 0.75 <= v.speed_multiplier <= 0.95
 
 
 def test_normal_speed_multiplier_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal, spawn_tick=0)
         assert 0.85 <= v.speed_multiplier <= 1.15
 
 
 def test_aggressive_speed_multiplier_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.aggressive)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.aggressive, spawn_tick=0)
         assert 1.1 <= v.speed_multiplier <= 1.35
 
 
 def test_reckless_speed_multiplier_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.reckless)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.reckless, spawn_tick=0)
         assert 1.3 <= v.speed_multiplier <= 1.6
 
 
@@ -77,28 +77,28 @@ def test_reckless_speed_multiplier_in_range():
 def test_conservative_following_distance_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.conservative)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.conservative, spawn_tick=0)
         assert 1.75 <= v.following_distance <= 2.5
 
 
 def test_normal_following_distance_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal, spawn_tick=0)
         assert 1.0 <= v.following_distance <= 2.0
 
 
 def test_aggressive_following_distance_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.aggressive)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.aggressive, spawn_tick=0)
         assert 0.5 <= v.following_distance <= 1.0
 
 
 def test_reckless_following_distance_in_range():
     spawner = VehicleSpawner()
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.reckless)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.reckless, spawn_tick=0)
         assert 0.1 <= v.following_distance <= 0.5
 
 
@@ -106,13 +106,13 @@ def test_reckless_following_distance_in_range():
 
 def test_normal_speed_multiplier_has_variance():
     spawner = VehicleSpawner()
-    values = {spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal).speed_multiplier for i in range(100)}
+    values = {spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal, spawn_tick=0).speed_multiplier for i in range(100)}
     assert len(values) > 1
 
 
 def test_normal_following_distance_has_variance():
     spawner = VehicleSpawner()
-    values = {spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal).following_distance for i in range(100)}
+    values = {spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal, spawn_tick=0).following_distance for i in range(100)}
     assert len(values) > 1
 
 
@@ -122,7 +122,7 @@ def _count_archetypes(n):
     spawner = VehicleSpawner()
     counts = {a: 0 for a in VehicleArchetype}
     for i in range(n):
-        v = spawner.create(i, (0, 0), (5, 5))
+        v = spawner.create(i, (0, 0), (5, 5), spawn_tick=0)
         counts[v.archetype] += 1
     return counts
 
@@ -163,13 +163,13 @@ def test_conservative_and_aggressive_within_30_percent():
 
 def test_create_with_archetype_returns_correct_archetype():
     spawner = VehicleSpawner()
-    v = spawner.create_with_archetype(1, (0, 0), (5, 5), VehicleArchetype.aggressive)
+    v = spawner.create_with_archetype(1, (0, 0), (5, 5), VehicleArchetype.aggressive, spawn_tick=0)
     assert v.archetype == VehicleArchetype.aggressive
 
 
 def test_create_with_archetype_speed_multiplier_has_variance():
     spawner = VehicleSpawner()
-    values = {spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.aggressive).speed_multiplier for i in range(100)}
+    values = {spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.aggressive, spawn_tick=0).speed_multiplier for i in range(100)}
     assert len(values) > 1
 
 
@@ -178,14 +178,14 @@ def test_create_with_archetype_speed_multiplier_has_variance():
 def test_speed_override_affects_overridden_archetype():
     spawner = VehicleSpawner(speed_overrides={VehicleArchetype.normal: (2.0, 2.5)})
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.normal, spawn_tick=0)
         assert 2.0 <= v.speed_multiplier <= 2.5
 
 
 def test_speed_override_does_not_affect_other_archetypes():
     spawner = VehicleSpawner(speed_overrides={VehicleArchetype.normal: (2.0, 2.5)})
     for i in range(100):
-        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.conservative)
+        v = spawner.create_with_archetype(i, (0, 0), (5, 5), VehicleArchetype.conservative, spawn_tick=0)
         assert 0.75 <= v.speed_multiplier <= 0.95
 
 
@@ -195,6 +195,6 @@ def test_weight_override_makes_reckless_most_common():
     spawner = VehicleSpawner(weight_overrides={VehicleArchetype.reckless: 1000})
     counts = {a: 0 for a in VehicleArchetype}
     for i in range(1000):
-        v = spawner.create(i, (0, 0), (5, 5))
+        v = spawner.create(i, (0, 0), (5, 5), spawn_tick=0)
         counts[v.archetype] += 1
     assert counts[VehicleArchetype.reckless] == max(counts.values())

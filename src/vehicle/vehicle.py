@@ -17,7 +17,7 @@ class VehicleState(Enum):
 
 
 class Vehicle:
-    def __init__(self, id, origin, destination, archetype, speed_multiplier, following_distance):
+    def __init__(self, id, origin, destination, archetype, speed_multiplier, following_distance, spawn_tick):
         self._id = id
         self._origin = origin
         self._destination = destination
@@ -30,6 +30,7 @@ class Vehicle:
         self._position = (float(origin[0]), float(origin[1]))
         self._current_speed = 0.0
         self._desired_speed = 0.0
+        self._spawn_tick = spawn_tick
 
     @property
     def id(self):
@@ -126,3 +127,11 @@ class Vehicle:
     @state.setter
     def state(self, value):
         self._state = value
+
+    @property
+    def spawn_tick(self):
+        return self._spawn_tick
+
+    @spawn_tick.setter
+    def spawn_tick(self, value):
+        raise AttributeError("spawn_tick is read-only")
