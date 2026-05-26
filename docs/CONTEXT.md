@@ -211,17 +211,17 @@ Full rationale for each decision in docs/DECISIONS.md.
 
 ## Current Status
 
-Planning and data structure design complete. Documentation written. 
+Planning and data structure design complete. Documentation written.
 Repository scaffolded. Virtual environment configured with Python 3.12.
 
-### Completed
-- Repository structure and all documentation stubs
-- DECISIONS.md with all 16 architectural decisions
-- CONTEXT.md established as living context document
+### Completed Modules
+- src/world/tile.py — Tile class with TileType and TrafficControl enums,
+  fixed and live properties, congestion derived property, reset_live_data,
+  to_dict, from_dict. Default speed limits confirmed: empty=0, road=3,
+  highway=6, residential=1, commercial=2, workplace=2. 32/32 tests passed.
 
 ### In Progress
-- Phase 1 MVP — beginning now
+- Phase 1 MVP — World grid next
 
 ### Next Step
-Implement Tile class in src/world/tile.py per the approved data structure above.
-Claude Code briefing has been written. First coding session starting.
+Implement World grid in src/world/world.py
