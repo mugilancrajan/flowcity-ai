@@ -208,6 +208,38 @@ City health score formula: throughput_rate * 0.4 + average_speed_ratio * 0.35 + 
 Full rationale for each decision in docs/DECISIONS.md.
 
 ---
+## Claude Code Workflow Rules
+
+These rules apply to every Claude Code session without exception.
+
+### Behavior Rules
+1. Before writing any code, describe what you are about to build and why — plan mode first
+2. Wait for explicit approval before writing anything
+3. Build one thing at a time — one class, one file, one method set
+4. After completing each task, state what was built, what file it lives in, and what the next logical step is
+5. Never modify a file that wasn't part of the agreed task
+6. If something in CONTEXT.md is ambiguous or missing, stop and ask — never assume
+
+### Code Rules
+1. Match the exact data structures defined in this document — no alternatives
+2. Tile coordinates are always integers (col, row) — vehicle positions are always floats
+3. Never store derived data — congestion is always calculated, never stored
+4. Simulation core must work without Pygame — keep simulation logic and rendering completely separate
+5. Every module has one responsibility — no module imports another module's internals directly
+6. Public interfaces use (col, row) convention — internal storage order is an implementation detail
+
+### Testing Rules
+1. Outline test cases before implementation — plan first, approve, then build
+2. Tests live permanently in tests/ using pytest
+3. Never move to the next module until all tests pass
+4. Run pytest tests/<module> after each implementation
+
+### Commit Rules
+1. Commit after every completed and tested module
+2. Commit messages describe what was built and any corrections made
+3. Never commit broken or untested code
+
+---
 
 ## Current Status
 
@@ -219,9 +251,12 @@ Repository scaffolded. Virtual environment configured with Python 3.12.
   fixed and live properties, congestion derived property, reset_live_data,
   to_dict, from_dict. Default speed limits confirmed: empty=0, road=3,
   highway=6, residential=1, commercial=2, workplace=2. 32/32 tests passed.
+- src/world/world.py — World class with cols/rows properties, get_tile, 
+  set_tile (partial updates), get_neighbors, get_tiles_by_type, 
+  to_dict/from_dict, save/load. 33/33 tests passed.
 
 ### In Progress
 - Phase 1 MVP — World grid next
 
 ### Next Step
-Implement World grid in src/world/world.py
+Implement Road Network Graph in src/graph/
