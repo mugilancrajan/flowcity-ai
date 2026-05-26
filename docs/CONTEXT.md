@@ -255,9 +255,12 @@ Repository scaffolded. Virtual environment configured with Python 3.12.
 - src/world/world.py — World class with cols/rows properties, get_tile, 
   set_tile (partial updates), get_neighbors, get_tiles_by_type, 
   to_dict/from_dict, save/load. 33/33 tests passed.
+- src/graph/road_network.py — RoadNetwork class with DiGraph construction,
+  get_path with NoPathError, rebuild. 22/22 tests passed.
+- src/exceptions.py — NoPathError custom exception.
 
 ### In Progress
-- Phase 1 MVP — Road Network Graph
+- Phase 1 MVP — Vehicle agent
 
 ### Next Step
-Implement Road Network Graph in src/graph/
+Implement Vehicle agent in src/vehicle/
