@@ -122,3 +122,90 @@ SPAWN_ZONE_WEIGHTS = {
         ("residential", "commercial"):  1,
     }
 }
+
+# =============================================================================
+# WINDOW
+# =============================================================================
+WINDOW_WIDTH = 1280
+WINDOW_HEIGHT = 720
+UI_PANEL_WIDTH = 300
+DEFAULT_GRID_COLS = 20
+DEFAULT_GRID_ROWS = 15
+FPS = 60
+
+# =============================================================================
+# COLORS — TILES
+# =============================================================================
+COLOR_EMPTY         = (26,  26,  46)
+COLOR_ROAD          = (74,  74,  74)
+COLOR_HIGHWAY       = (42,  42,  42)
+COLOR_RESIDENTIAL   = (74,  124, 89)
+COLOR_COMMERCIAL    = (74,  111, 165)
+COLOR_WORKPLACE     = (193, 127, 36)
+
+# =============================================================================
+# COLORS — VEHICLES
+# =============================================================================
+COLOR_VEHICLE_CONSERVATIVE = (70,  130, 180)
+COLOR_VEHICLE_NORMAL       = (220, 220, 220)
+COLOR_VEHICLE_AGGRESSIVE   = (255, 140, 0)
+COLOR_VEHICLE_RECKLESS     = (200, 50,  50)
+
+# =============================================================================
+# COLORS — UI
+# =============================================================================
+COLOR_UI_BACKGROUND    = (20,  20,  35)
+COLOR_UI_ACCENT        = (80,  80,  120)
+COLOR_GRID_LINE        = (65,  65,  90)
+COLOR_SELECTION        = (255, 255, 100)
+COLOR_HIGHLIGHT_PATH   = (255, 255, 0)
+COLOR_HIGHLIGHT_CONGESTION = (255, 0, 0)
+COLOR_TEXT_PRIMARY     = (220, 220, 220)
+COLOR_TEXT_SECONDARY   = (140, 140, 160)
+
+# =============================================================================
+# TRANSITION
+# =============================================================================
+TRANSITION_DURATION_MS = 400
+
+# =============================================================================
+# CHART
+# =============================================================================
+CHART_REFRESH_INTERVAL = 50
+
+# =============================================================================
+# EDIT MODE UI
+# =============================================================================
+
+# Tool modes
+TOOL_PAINT  = "paint"
+TOOL_SELECT = "select"
+
+# Tile palette entries — (TileType name, display label)
+# Order determines grid layout (2 columns, top to bottom)
+PALETTE_TILE_ENTRIES = [
+    ("empty",       "Empty"),
+    ("road",        "Road"),
+    ("highway",     "Highway"),
+    ("residential", "Residential"),
+    ("commercial",  "Commercial"),
+    ("workplace",   "Workplace"),
+]
+
+# Traffic control palette entries — (TrafficControl name, display label)
+PALETTE_TRAFFIC_ENTRIES = [
+    ("none",          "None"),
+    ("stop_sign",     "Stop Sign"),
+    ("traffic_light", "Traffic Light"),
+]
+
+# Speed limit popup
+COLOR_POPUP_BG     = (30,  30,  50)
+COLOR_POPUP_BORDER = (120, 120, 180)
+
+# Hover shadow alpha (0-255)
+HOVER_SHADOW_ALPHA = 80
+
+# Selection rectangle — fill is RGBA (4-channel), border is RGB
+COLOR_SELECTION_FILL   = (255, 255, 100, 40)
+COLOR_SELECTION_BORDER = (255, 255, 100)

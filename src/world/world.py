@@ -1,8 +1,7 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from src.world.tile import Tile, TileType, TrafficControl
-
+from src.world.tile import Tile, TileType, TrafficControl, _DEFAULT_SPEED_LIMIT
 
 class World:
     def __init__(self, cols: int, rows: int) -> None:
@@ -34,17 +33,20 @@ class World:
         return self._grid[row][col]
 
     def set_tile(
-        self,
-        col: int,
-        row: int,
-        tile_type: TileType | None = None,
-        traffic_control: TrafficControl | None = None,
-        speed_limit: int | None = None,
+            self,
+            col: int,
+            row: int,
+            tile_type: TileType | None = None,
+            traffic_control: TrafficControl | None = None,
+            speed_limit: int | None = None,
     ) -> None:
         self._check_bounds(col, row)
         tile = self._grid[row][col]
         if tile_type is not None:
             tile.tile_type = tile_type
+            # Apply default speed limit for new type only if not explicitly set
+            if speed_limit is None:
+                tile.speed_limit = _DEFAULT_SPEED_LIMIT[tile_type]
         if traffic_control is not None:
             tile.traffic_control = traffic_control
         if speed_limit is not None:

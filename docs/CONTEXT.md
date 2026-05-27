@@ -262,9 +262,15 @@ Repository scaffolded. Virtual environment configured with Python 3.12.
   settings, movement scale, time periods, spawn rates, zone weights.
 - src/vehicle/vehicle.py — updated with spawn_tick read-only property.
   54/54 tests passing across vehicle module.
+- src/simulation/spawn_manager.py — SpawnManager with fractional 
+  accumulator spawning, period detection, zone-weighted 
+  origin/destination selection. 19/19 tests passed.
+- src/simulation/simulation_engine.py — SimulationEngine with full 
+  6-phase tick loop, time-of-day formatting, metrics snapshots, and 
+  all control methods. 47/47 tests passed.
 
 ### In Progress
-- Phase 1 MVP — Simulation engine
+- Phase 1 MVP — Visualizer
 
 ### Next Step
-Implement Simulation engine in src/simulation/
+Implement Visualizer in src/visualizer/
