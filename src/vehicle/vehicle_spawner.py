@@ -2,30 +2,7 @@ import copy
 import random
 
 from src.vehicle.vehicle import Vehicle, VehicleArchetype
-
-
-ARCHETYPE_CONFIGS = {
-    VehicleArchetype.conservative: {
-        "speed_range": (0.75, 0.95),
-        "following_range": (1.75, 2.5),
-        "weight": 20
-    },
-    VehicleArchetype.normal: {
-        "speed_range": (0.85, 1.15),
-        "following_range": (1.0, 2.0),
-        "weight": 50
-    },
-    VehicleArchetype.aggressive: {
-        "speed_range": (1.1, 1.35),
-        "following_range": (0.5, 1.0),
-        "weight": 20
-    },
-    VehicleArchetype.reckless: {
-        "speed_range": (1.3, 1.6),
-        "following_range": (0.1, 0.5),
-        "weight": 10
-    }
-}
+from src.config import ARCHETYPE_CONFIGS
 
 
 class VehicleSpawner:

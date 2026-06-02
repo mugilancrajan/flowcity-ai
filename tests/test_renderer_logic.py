@@ -504,3 +504,56 @@ class TestSpeedPopup:
             speed_selection_tiles=[],   # empty list → no popup
         )
         assert renderer._speed_popup_rect is None
+
+
+# ===========================================================================
+# GROUP 9 — Simulate mode logic
+# ===========================================================================
+
+class TestSimulateModeLogic:
+
+    def test_render_congestion_chart_empty_returns_none(self, renderer):
+        """Empty snapshot list must return None without raising."""
+        result = renderer.render_congestion_chart([])
+        assert result is None
+
+    def test_health_color_zero_is_reddish(self, renderer):
+        r, g, b = renderer._health_color(0)
+        assert r > g, "score=0 should be red-dominant"
+        assert r > b, "score=0 should be red-dominant"
+
+    def test_health_color_hundred_is_greenish(self, renderer):
+        r, g, b = renderer._health_color(100)
+        assert g > r, "score=100 should be green-dominant"
+        assert g > b, "score=100 should be green-dominant"
+
+    def test_health_color_fifty_is_yellowish(self, renderer):
+        r, g, b = renderer._health_color(50)
+        assert r > 50, "score=50 should have significant red (yellow mix)"
+        assert g > 50, "score=50 should have significant green (yellow mix)"
+
+    def test_vehicle_pixel_pos_known_position(self, renderer):
+        """_vehicle_pixel_pos at (5,7) going right places vehicle at tile centre, right lane."""
+        from src.vehicle.vehicle import Vehicle, VehicleArchetype
+        from src.config import VEHICLE_ROAD_OFFSET
+
+        world = World(20, 15)
+        renderer.recalculate_layout(1280, 720, world)
+
+        v = Vehicle(1, (5, 7), (10, 7), VehicleArchetype.normal, 1.0, 1.5, 0)
+        v.path       = [(5, 7), (6, 7), (7, 7)]
+        v.path_index = 0
+        v.position   = (5.0, 7.0)
+
+        px, py = renderer._vehicle_pixel_pos(v)
+
+        # Segment direction (5,7)→(6,7): dx=1, dy=0.
+        # +0.5 centres vehicle on tile; right-hand perp in screen space = (−dy, dx) = (0, +1)
+        # → no x-offset, positive y-offset (downward in screen = right lane for rightward travel).
+        ts     = renderer._tile_size
+        base_x = renderer._grid_offset_x + (5.0 + 0.5) * ts
+        base_y = renderer._grid_offset_y + (7.0 + 0.5) * ts
+        offset = VEHICLE_ROAD_OFFSET * ts
+
+        assert px == pytest.approx(base_x,          abs=0.1)
+        assert py == pytest.approx(base_y + offset,  abs=0.1)

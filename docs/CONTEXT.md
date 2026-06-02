@@ -268,9 +268,18 @@ Repository scaffolded. Virtual environment configured with Python 3.12.
 - src/simulation/simulation_engine.py — SimulationEngine with full 
   6-phase tick loop, time-of-day formatting, metrics snapshots, and 
   all control methods. 47/47 tests passed.
+- src/visualizer/app.py — App class with game loop, startup screen,
+  edit mode event handling, transitions, save/load via tkinter.
+- src/visualizer/renderer.py — Renderer class with startup screen,
+  animated grid, edit mode UI panel, tile palette, traffic control,
+  hover shadow, selection rect, speed limit tooltip, speed popup.
+- main.py — entry point.
+- src/world/world.py — updated set_tile to apply default speed limits
+  when tile type is painted.
 
 ### In Progress
-- Phase 1 MVP — Visualizer
+- Phase 1 MVP — Visualizer Stage 3 (Simulate Mode)
 
 ### Next Step
-Implement Visualizer in src/visualizer/
+Implement Visualizer Stage 3 — Simulate mode UI, vehicle rendering,
+metrics panel, matplotlib chart, vehicle inspector popup.

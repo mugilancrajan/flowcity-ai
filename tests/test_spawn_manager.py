@@ -54,13 +54,13 @@ def test_construction_empty_world():
 # ------------------------------------------------------------------
 
 @pytest.mark.parametrize("tick,expected", [
-    (0,      "early_morning"),
-    (3600,   "morning_rush"),
-    (5400,   "midday"),
-    (9600,   "evening_rush"),
-    (11400,  "night"),
-    (14399,  "night"),
-    (14400,  "early_morning"),
+    (0,       "early_morning"),
+    (7200,    "morning_rush"),
+    (10800,   "midday"),
+    (19200,   "evening_rush"),
+    (22800,   "night"),
+    (28799,   "night"),
+    (28800,   "early_morning"),
 ])
 def test_get_current_period(tick, expected):
     sm = make_spawn_manager()

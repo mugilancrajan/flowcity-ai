@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import math
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+
 import pygame
 
 from src.config import (
@@ -26,8 +32,25 @@ from src.config import (
     HOVER_SHADOW_ALPHA,
     COLOR_SELECTION_FILL,
     COLOR_SELECTION_BORDER,
+    # Simulate mode
+    SIMULATE_SPEEDS,
+    VEHICLE_SIZE_FRACTION,
+    VEHICLE_LENGTH_FRACTION,
+    VEHICLE_WIDTH_FRACTION,
+    VEHICLE_ROAD_OFFSET,
+    ARCHETYPE_COLORS,
+    ARCHETYPE_CONFIGS,
+    COLOR_CONGESTION_MARKER,
+    INSPECTOR_WIDTH,
+    INSPECTOR_HEIGHT,
+    CHART_WINDOW,
+    COLOR_VEHICLE_CONSERVATIVE,
+    COLOR_VEHICLE_NORMAL,
+    COLOR_VEHICLE_AGGRESSIVE,
+    COLOR_VEHICLE_RECKLESS,
 )
 from src.world.tile import TileType, TrafficControl
+from src.vehicle.vehicle import VehicleArchetype, VehicleState
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -104,6 +127,15 @@ class Renderer:
         self._btn_load:        pygame.Rect | None = None
         self._btn_start_sim:   pygame.Rect | None = None
         self._speed_popup_rect: pygame.Rect | None = None
+
+        # ---- simulate mode UI rects (set by _draw_simulate_ui / _draw_vehicle_inspector)
+        self._btn_sim_pause:       pygame.Rect | None = None
+        self._btn_sim_reset:       pygame.Rect | None = None
+        self._btn_sim_speeds:      list[pygame.Rect]  = []
+        self._btn_inspector_close: pygame.Rect | None = None
+
+        # ---- vehicle last-known direction cache (id → (dx, dy)) -----------
+        self._last_vehicle_dirs: dict[int, tuple[float, float]] = {}
 
         self.recalculate_layout(surface.get_width(), surface.get_height())
 
@@ -184,6 +216,12 @@ class Renderer:
         hovered_speed_limit=None,
         hovered_tile_type=None,
         tooltip_pos=None,
+        # Simulate mode state
+        engine=None,
+        sim_paused: bool = True,
+        sim_speed_index: int = 0,
+        selected_vehicle=None,
+        chart_surface=None,
     ) -> None:
         """Draw one frame.  mode is an AppMode-like enum checked by .name."""
         self._update_animation()
@@ -226,9 +264,16 @@ class Renderer:
             self._draw_speed_tooltip(hovered_speed_limit, hovered_tile_type, tooltip_pos)
 
         elif name == "SIMULATE":
+            # Reset inspector close button each frame so stale clicks don't fire
+            self._btn_inspector_close = None
             if world is not None:
                 self._draw_grid(world)
-            self._draw_ui_placeholder("SIMULATE MODE")
+                if engine is not None:
+                    self._draw_congestion_markers(engine)
+                    self._draw_vehicles(engine.active_vehicles, selected_vehicle)
+                    self._draw_path_highlight(selected_vehicle)
+                    self._draw_vehicle_inspector(selected_vehicle, engine)
+            self._draw_simulate_ui(engine, sim_paused, sim_speed_index, chart_surface)
 
         # ---- scale and blit if needed -------------------------------------
         if temp is not None:
@@ -873,9 +918,12 @@ class Renderer:
         pad: int,
         inner_w: int,
         cy: int,
+        compact: bool = False,
     ) -> int:
         """Draw a thin accent line + uppercase section label. Returns updated cy."""
-        cy += 8
+        top_gap = 4 if compact else 8
+        bot_gap = 2 if compact else 4
+        cy += top_gap
         pygame.draw.line(
             surface, _brighten(COLOR_UI_ACCENT, 20),
             (panel_x + pad, cy), (panel_x + pad + inner_w, cy), 1
@@ -883,8 +931,623 @@ class Renderer:
         cy += 2
         lbl = self._font_small.render(text, True, _brighten(COLOR_TEXT_SECONDARY, 20))
         surface.blit(lbl, (panel_x + pad, cy))
-        cy += lbl.get_height() + 4
+        cy += lbl.get_height() + bot_gap
         return cy
+
+
+    # ------------------------------------------------------------------
+    # Simulate mode — grid overlays
+    # ------------------------------------------------------------------
+
+    def _compute_direction(self, vehicle) -> tuple[float, float]:
+        """
+        Return a stable normalised travel-direction vector for vehicle.
+
+        Uses the current path *segment* vector (path[idx+1] − path[idx]) rather
+        than the vehicle-position–to–target vector, so the direction never wobbles
+        due to floating-point position offsets.  In the second half of each tile
+        crossing the direction is smoothly blended toward the next segment, which
+        eliminates the abrupt perpendicular-offset jump that would otherwise occur
+        at every corner.
+        """
+        path = vehicle.path
+        idx  = vehicle.path_index
+        vx, vy = vehicle.position
+
+        # Past (or at) the last waypoint — use the final segment's direction.
+        if idx + 1 >= len(path):
+            if idx > 0:
+                seg_dx = float(path[idx][0] - path[idx - 1][0])
+                seg_dy = float(path[idx][1] - path[idx - 1][1])
+                m = math.sqrt(seg_dx * seg_dx + seg_dy * seg_dy)
+                return (seg_dx / m, seg_dy / m) if m > 0 else (1.0, 0.0)
+            return (1.0, 0.0)
+
+        # Current segment direction (stable — independent of exact position).
+        seg_dx = float(path[idx + 1][0] - path[idx][0])
+        seg_dy = float(path[idx + 1][1] - path[idx][1])
+        seg_len = math.sqrt(seg_dx * seg_dx + seg_dy * seg_dy)
+        if seg_len <= 0:
+            return (1.0, 0.0)
+        seg_dx /= seg_len
+        seg_dy /= seg_len
+
+        # In the second half of the segment, blend toward the next segment so the
+        # perpendicular road-offset rotates smoothly rather than snapping at corners.
+        if idx + 2 < len(path):
+            nxt_dx = float(path[idx + 2][0] - path[idx + 1][0])
+            nxt_dy = float(path[idx + 2][1] - path[idx + 1][1])
+            nxt_len = math.sqrt(nxt_dx * nxt_dx + nxt_dy * nxt_dy)
+            if nxt_len > 0:
+                nxt_dx /= nxt_len
+                nxt_dy /= nxt_len
+                # Progress along segment [0…1] via projection onto segment axis.
+                t = (vx - path[idx][0]) * seg_dx + (vy - path[idx][1]) * seg_dy
+                blend = max(0.0, min(1.0, (t - 0.5) * 2.0))
+                if blend > 0.0:
+                    dx = seg_dx + blend * (nxt_dx - seg_dx)
+                    dy = seg_dy + blend * (nxt_dy - seg_dy)
+                    m  = math.sqrt(dx * dx + dy * dy)
+                    if m > 0:
+                        return (dx / m, dy / m)
+
+        return (seg_dx, seg_dy)
+
+    def _corner_arc_position(self, vehicle) -> tuple[float, float] | None:
+        """
+        If the vehicle is within ±0.5 tiles of a corner waypoint where the path
+        changes direction, return its smoothly-arced visual position as floats
+        (col, row). Otherwise return None.
+
+        The arc is a quadratic Bezier from the segment-entry midpoint, through
+        the corner waypoint as control, to the segment-exit midpoint.
+        """
+        path = vehicle.path
+        idx  = vehicle.path_index
+        if idx + 1 >= len(path) or idx + 2 >= len(path):
+            return None
+
+        curr = path[idx]
+        nxt  = path[idx + 1]
+        aft  = path[idx + 2]
+
+        d1 = (nxt[0] - curr[0], nxt[1] - curr[1])
+        d2 = (aft[0] - nxt[0], aft[1] - nxt[1])
+        if d1 == d2:
+            return None
+
+        vx, vy = vehicle.position
+        dx = nxt[0] - vx
+        dy = nxt[1] - vy
+        dist_to_corner = math.sqrt(dx * dx + dy * dy)
+        if dist_to_corner > 0.5:
+            return None
+
+        p0 = (nxt[0] - 0.5 * d1[0], nxt[1] - 0.5 * d1[1])
+        p1 = (nxt[0], nxt[1])
+        p2 = (nxt[0] + 0.5 * d2[0], nxt[1] + 0.5 * d2[1])
+
+        along_in = (vx - p0[0]) * d1[0] + (vy - p0[1]) * d1[1]
+        t = max(0.0, min(1.0, along_in))
+
+        omt = 1.0 - t
+        bx = omt * omt * p0[0] + 2 * omt * t * p1[0] + t * t * p2[0]
+        by = omt * omt * p0[1] + 2 * omt * t * p1[1] + t * t * p2[1]
+        return (bx, by)
+
+    def _vehicle_pixel_pos(self, vehicle) -> tuple[float, float]:
+        """Return pixel centre of vehicle, with corner arc smoothing applied."""
+        arc = self._corner_arc_position(vehicle)
+        if arc is not None:
+            vx, vy = arc
+        else:
+            vx, vy = vehicle.position
+
+        px = self._grid_offset_x + (vx + 0.5) * self._tile_size
+        py = self._grid_offset_y + (vy + 0.5) * self._tile_size
+
+        dx, dy = self._compute_direction(vehicle)
+        offset = VEHICLE_ROAD_OFFSET * self._tile_size
+        return (px - dy * offset, py + dx * offset)
+
+    def _get_vehicle_color(self, vehicle) -> tuple[int, int, int]:
+        """
+        Return a single body color based on where speed_multiplier sits within
+        the archetype's speed_range.  Lower third → lighter, upper third → darker.
+        """
+        base    = ARCHETYPE_COLORS[vehicle.archetype]
+        cfg     = ARCHETYPE_CONFIGS[vehicle.archetype]
+        lo, hi  = cfg["speed_range"]
+        t       = (vehicle.speed_multiplier - lo) / (hi - lo) if hi != lo else 0.5
+        t       = max(0.0, min(1.0, t))
+        if t < 0.33:
+            return _brighten(base, 45)
+        elif t < 0.67:
+            return base
+        else:
+            return _darken(base, 35)
+
+    def _draw_vehicles(self, active_vehicles, selected_vehicle) -> None:
+        """
+        Draw all driving vehicles as elongated rotated rectangles.
+        Each vehicle faces its direction of travel and is offset to the
+        right-hand side of the road centre line.
+        """
+        surface  = self._surface
+        ts       = self._tile_size
+
+        v_length = max(6, int(ts * VEHICLE_LENGTH_FRACTION))
+        v_width  = max(3, int(ts * VEHICLE_WIDTH_FRACTION))
+
+        for vehicle in active_vehicles:
+            if vehicle.state != VehicleState.driving:
+                continue
+
+            px, py = self._vehicle_pixel_pos(vehicle)
+
+            # Stable segment-based direction — eliminates corner wobble.
+            dx, dy = self._compute_direction(vehicle)
+            # atan2(-dy, dx): negative dy because screen y is downward.
+            # pygame.transform.rotate is counterclockwise, matching atan2 convention.
+            angle = math.degrees(math.atan2(-dy, dx))
+
+            color     = self._get_vehicle_color(vehicle)
+            highlight = _brighten(color, 50)
+
+            # Build unrotated surface — vehicle body points east (right)
+            vsurf = pygame.Surface((v_length, v_width), pygame.SRCALPHA)
+
+            # Body fill
+            body_rect = pygame.Rect(0, 0, v_length, v_width)
+            pygame.draw.rect(vsurf, (*color, 230), body_rect, border_radius=2)
+
+            # Windscreen highlight — front 20% of length, slightly lighter
+            ws_w  = max(2, v_length // 5)
+            ws_rect = pygame.Rect(v_length - ws_w, 1, ws_w - 1, v_width - 2)
+            pygame.draw.rect(vsurf, (*highlight, 160), ws_rect, border_radius=1)
+
+            # Thin dark border for visual definition
+            pygame.draw.rect(vsurf, (0, 0, 0, 120), body_rect, 1, border_radius=2)
+
+            rotated  = pygame.transform.rotate(vsurf, angle)
+            rot_rect = rotated.get_rect(center=(int(px), int(py)))
+            surface.blit(rotated, rot_rect)
+
+            # White selection ring
+            if vehicle is selected_vehicle:
+                ring_surf = pygame.Surface((v_length + 8, v_width + 8), pygame.SRCALPHA)
+                pygame.draw.rect(
+                    ring_surf, (255, 255, 255, 200),
+                    pygame.Rect(0, 0, v_length + 8, v_width + 8),
+                    2, border_radius=3,
+                )
+                rot_ring      = pygame.transform.rotate(ring_surf, angle)
+                rot_ring_rect = rot_ring.get_rect(center=(int(px), int(py)))
+                surface.blit(rot_ring, rot_ring_rect)
+
+    def _draw_path_highlight(self, selected_vehicle) -> None:
+        """Semi-transparent yellow overlay on the selected vehicle's route."""
+        if selected_vehicle is None:
+            return
+        path    = selected_vehicle.path
+        idx     = selected_vehicle.path_index
+        surface = self._surface
+
+        for i, (col, row) in enumerate(path):
+            rect    = self.get_tile_pixel_rect(col, row)
+            overlay = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            if i <= idx:
+                # Already traversed — dim yellow
+                overlay.fill((180, 180, 0, 30))
+            else:
+                # Future tiles — bright yellow
+                overlay.fill((255, 255, 0, 50))
+            surface.blit(overlay, rect.topleft)
+
+    def _draw_congestion_markers(self, engine) -> None:
+        """Pulsing red border on the top 5 most congested tiles."""
+        snapshots = engine.metrics_snapshots
+        if not snapshots:
+            return
+        top_tiles = snapshots[-1]["top_congested_tiles"]
+        if not top_tiles:
+            return
+
+        # Alpha oscillates between 120 and 220
+        pulse_t = (math.sin(self._anim_tick * 0.08) + 1.0) / 2.0
+        alpha   = int(120 + pulse_t * 100)
+
+        surface = self._surface
+        for col, row, _ratio in top_tiles[:5]:
+            rect   = self.get_tile_pixel_rect(col, row)
+            marker = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(
+                marker,
+                (*COLOR_CONGESTION_MARKER, alpha),
+                pygame.Rect(0, 0, rect.width, rect.height),
+                2,
+            )
+            surface.blit(marker, rect.topleft)
+
+    def _draw_vehicle_inspector(self, selected_vehicle, engine) -> None:
+        """Popup card with vehicle details, anchored to the selected vehicle."""
+        if selected_vehicle is None:
+            return
+        if selected_vehicle not in engine.active_vehicles:
+            return
+
+        surface  = self._surface
+        sw, sh   = surface.get_size()
+        panel_x  = sw - UI_PANEL_WIDTH
+
+        vpx, vpy = self._vehicle_pixel_pos(selected_vehicle)
+        vpx, vpy = int(vpx), int(vpy)
+
+        # Card position — prefer right of vehicle, clamp to screen / panel edge
+        card_w, card_h = INSPECTOR_WIDTH, INSPECTOR_HEIGHT
+        cx = vpx + 24
+        cy = vpy - card_h // 2
+        cx = max(4, min(cx, panel_x - card_w - 4))
+        cy = max(4, min(cy, sh - card_h - 4))
+        card_rect = pygame.Rect(cx, cy, card_w, card_h)
+
+        # Connecting line
+        mid_y    = card_rect.top + card_h // 2
+        line_end = (card_rect.left, mid_y) if vpx <= card_rect.right else (card_rect.right, mid_y)
+        line_surf = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        pygame.draw.line(line_surf, (255, 255, 255, 160), (vpx, vpy), line_end, 1)
+        surface.blit(line_surf, (0, 0))
+
+        # Card background + border
+        pygame.draw.rect(surface, (20, 20, 40), card_rect, border_radius=6)
+        pygame.draw.rect(surface, COLOR_UI_ACCENT, card_rect, 1, border_radius=6)
+
+        # Close button (X) — top-right corner
+        close_size = 18
+        close_rect = pygame.Rect(
+            card_rect.right - close_size - 4,
+            card_rect.top   + 4,
+            close_size, close_size,
+        )
+        self._btn_inspector_close = close_rect
+        close_hover = close_rect.collidepoint(pygame.mouse.get_pos())
+        pygame.draw.rect(
+            surface,
+            (80, 40, 40) if close_hover else (50, 30, 30),
+            close_rect, border_radius=3,
+        )
+        pygame.draw.line(surface, (200, 200, 200),
+                         (close_rect.left + 4, close_rect.top + 4),
+                         (close_rect.right - 4, close_rect.bottom - 4), 2)
+        pygame.draw.line(surface, (200, 200, 200),
+                         (close_rect.right - 4, close_rect.top + 4),
+                         (close_rect.left + 4, close_rect.bottom - 4), 2)
+
+        # Card content
+        pad = 8
+        tx  = card_rect.left + pad
+        ty  = card_rect.top  + pad
+
+        # Title
+        id_surf = self._font_small.render(
+            f"Vehicle #{selected_vehicle.id}", True, COLOR_TEXT_PRIMARY
+        )
+        surface.blit(id_surf, (tx, ty))
+        ty += id_surf.get_height() + 3
+
+        # Thin separator
+        pygame.draw.line(
+            surface, COLOR_UI_ACCENT,
+            (card_rect.left + 4, ty), (card_rect.right - 4, ty), 1,
+        )
+        ty += 5
+
+        # Archetype — colored dot + name
+        arch_color = ARCHETYPE_COLORS.get(selected_vehicle.archetype, COLOR_TEXT_SECONDARY)
+        pygame.draw.circle(surface, arch_color, (tx + 4, ty + 5), 4)
+        arch_surf = self._font_small.render(
+            selected_vehicle.archetype.name.capitalize(), True, COLOR_TEXT_SECONDARY
+        )
+        surface.blit(arch_surf, (tx + 12, ty))
+        ty += arch_surf.get_height() + 2
+
+        # Remaining fields
+        fields = [
+            ("Speed",       f"{selected_vehicle.current_speed:.2f}"),
+            ("Multiplier",  f"{selected_vehicle.speed_multiplier:.2f}"),
+            ("Follow dist", f"{selected_vehicle.following_distance:.1f}"),
+            ("State",       selected_vehicle.state.name),
+            ("Spawn tick",  str(selected_vehicle.spawn_tick)),
+        ]
+        for label, value in fields:
+            lsurf = self._font_small.render(
+                f"{label}: {value}", True, COLOR_TEXT_SECONDARY
+            )
+            surface.blit(lsurf, (tx, ty))
+            ty += lsurf.get_height() + 2
+
+    # ------------------------------------------------------------------
+    # Simulate mode — right panel
+    # ------------------------------------------------------------------
+
+    def _health_color(self, score: float) -> tuple:
+        """0=red  50=yellow  100=green — used for health score and bars."""
+        t = max(0.0, min(1.0, score / 100))
+        if t < 0.5:
+            r = 220
+            g = int(t * 2 * 200)
+            b = 50
+        else:
+            r = int((1 - t) * 2 * 220)
+            g = 200
+            b = 50
+        return (r, g, b)
+
+    def _draw_simulate_ui(
+        self,
+        engine,
+        sim_paused:      bool,
+        sim_speed_index: int,
+        chart_surface,
+    ) -> None:
+        """Full right-panel UI for simulate mode."""
+        surface   = self._surface
+        sw, sh    = surface.get_size()
+        panel_x   = sw - UI_PANEL_WIDTH
+        pad       = 10
+        inner_w   = UI_PANEL_WIDTH - pad * 2
+        mouse_pos = pygame.mouse.get_pos()
+
+        # Panel background + separator
+        pygame.draw.rect(surface, COLOR_UI_BACKGROUND,
+                         pygame.Rect(panel_x, 0, UI_PANEL_WIDTH, sh))
+        pygame.draw.line(surface, COLOR_UI_ACCENT, (panel_x, 0), (panel_x, sh), 1)
+
+        cy = 6
+
+        # Reset button rects every frame
+        self._btn_sim_pause  = None
+        self._btn_sim_reset  = None
+        self._btn_sim_speeds = []
+
+        # ==================================================================
+        # TIME OF DAY
+        # ==================================================================
+        cy = self._draw_section_header(surface, "TIME OF DAY", panel_x, pad, inner_w, cy, compact=True)
+
+        if engine is not None:
+            time_surf = self._font_medium.render(engine.time_of_day, True, COLOR_TEXT_PRIMARY)
+            surface.blit(time_surf, (panel_x + pad, cy))
+            cy += time_surf.get_height() + 1
+
+            tick_surf = self._font_small.render(
+                f"Tick {engine.tick}", True, COLOR_TEXT_SECONDARY
+            )
+            surface.blit(tick_surf, (panel_x + pad, cy))
+            cy += tick_surf.get_height() + 1
+
+            period_display = engine.current_period.replace("_", " ").title()
+            period_surf    = self._font_small.render(
+                period_display, True, COLOR_TEXT_SECONDARY
+            )
+            surface.blit(period_surf, (panel_x + pad, cy))
+            cy += period_surf.get_height() + 2
+        else:
+            placeholder = self._font_small.render(
+                "No simulation loaded", True, COLOR_TEXT_SECONDARY
+            )
+            surface.blit(placeholder, (panel_x + pad, cy))
+            cy += placeholder.get_height() + 2
+
+        # ==================================================================
+        # CONTROLS
+        # ==================================================================
+        cy = self._draw_section_header(surface, "CONTROLS", panel_x, pad, inner_w, cy, compact=True)
+
+        btn_h   = 26
+        pause_w = int(inner_w * 0.55)
+        reset_w = inner_w - pause_w - 6
+
+        pause_rect = pygame.Rect(panel_x + pad,              cy, pause_w, btn_h)
+        reset_rect = pygame.Rect(panel_x + pad + pause_w + 6, cy, reset_w, btn_h)
+        self._btn_sim_pause = pause_rect
+        self._btn_sim_reset = reset_rect
+
+        # Pause / Resume — filled pill
+        pause_label = "▶ Resume" if sim_paused else "⏸ Pause"
+        pause_hover = pause_rect.collidepoint(mouse_pos)
+        pause_bg    = _brighten(COLOR_UI_ACCENT, 40) if pause_hover else _brighten(COLOR_UI_ACCENT, 20)
+        pygame.draw.rect(surface, pause_bg, pause_rect, border_radius=btn_h // 2)
+        pause_lbl = self._font_small.render(pause_label, True, COLOR_TEXT_PRIMARY)
+        surface.blit(pause_lbl, pause_lbl.get_rect(center=pause_rect.center))
+
+        # Reset — outline
+        reset_hover   = reset_rect.collidepoint(mouse_pos)
+        reset_border  = _brighten(COLOR_UI_ACCENT, 25) if reset_hover else COLOR_UI_ACCENT
+        if reset_hover:
+            pygame.draw.rect(surface, _brighten(COLOR_UI_BACKGROUND, 20), reset_rect, border_radius=4)
+        pygame.draw.rect(surface, reset_border, reset_rect, 1, border_radius=4)
+        reset_lbl = self._font_small.render(
+            "↩ Edit",
+            True,
+            COLOR_TEXT_PRIMARY if reset_hover else COLOR_TEXT_SECONDARY,
+        )
+        surface.blit(reset_lbl, reset_lbl.get_rect(center=reset_rect.center))
+
+        cy += btn_h + 4
+
+        # Speed buttons — 4 in a row
+        speed_btn_w = (inner_w - 3 * 4) // 4
+        speed_btn_h = 22
+        for i, (_mult, label) in enumerate(SIMULATE_SPEEDS):
+            bx    = panel_x + pad + i * (speed_btn_w + 4)
+            brect = pygame.Rect(bx, cy, speed_btn_w, speed_btn_h)
+            self._btn_sim_speeds.append(brect)
+            active = (i == sim_speed_index)
+            hover  = brect.collidepoint(mouse_pos)
+            if active:
+                pygame.draw.rect(
+                    surface, _brighten(COLOR_UI_ACCENT, 30), brect, border_radius=4,
+                )
+                lbl = self._font_small.render(label, True, COLOR_TEXT_PRIMARY)
+            else:
+                if hover:
+                    pygame.draw.rect(
+                        surface, _brighten(COLOR_UI_BACKGROUND, 15), brect, border_radius=4,
+                    )
+                pygame.draw.rect(surface, COLOR_UI_ACCENT, brect, 1, border_radius=4)
+                lbl = self._font_small.render(
+                    label, True, COLOR_TEXT_PRIMARY if hover else COLOR_TEXT_SECONDARY,
+                )
+            surface.blit(lbl, lbl.get_rect(center=brect.center))
+
+        cy += speed_btn_h + 4
+
+        # ==================================================================
+        # CITY HEALTH
+        # ==================================================================
+        cy = self._draw_section_header(surface, "CITY HEALTH", panel_x, pad, inner_w, cy, compact=True)
+
+        health_score = 0.0
+        if engine is not None and engine.metrics_snapshots:
+            health_score = engine.metrics_snapshots[-1]["city_health_score"]
+        health_color = self._health_color(health_score)
+
+        score_surf = self._font_medium.render(f"{health_score:.1f}", True, health_color)
+        surface.blit(score_surf, (panel_x + pad, cy))
+        cy += score_surf.get_height() + 2
+
+        bar_h    = 6
+        bar_rect = pygame.Rect(panel_x + pad, cy, inner_w, bar_h)
+        pygame.draw.rect(surface, _brighten(COLOR_UI_BACKGROUND, 15), bar_rect, border_radius=4)
+        fill_w = int(inner_w * max(0.0, min(1.0, health_score / 100)))
+        if fill_w > 0:
+            pygame.draw.rect(
+                surface, health_color,
+                pygame.Rect(panel_x + pad, cy, fill_w, bar_h),
+                border_radius=4,
+            )
+        pygame.draw.rect(surface, COLOR_UI_ACCENT, bar_rect, 1, border_radius=4)
+        cy += bar_h + 4
+
+        # ==================================================================
+        # CONGESTION CHART
+        # ==================================================================
+        cy = self._draw_section_header(surface, "CONGESTION", panel_x, pad, inner_w, cy, compact=True)
+
+        if chart_surface is not None:
+            cw, ch = chart_surface.get_size()
+            target_w = inner_w
+            target_h = int(ch * target_w / cw) if cw > 0 else ch
+            scaled   = pygame.transform.scale(chart_surface, (target_w, target_h))
+            surface.blit(scaled, (panel_x + pad, cy))
+            cy += target_h + 3
+        else:
+            wait = self._font_small.render("Waiting for data...", True, COLOR_TEXT_SECONDARY)
+            surface.blit(wait, (panel_x + pad, cy))
+            cy += wait.get_height() + 3
+
+        # ==================================================================
+        # BOTTLENECKS
+        # ==================================================================
+        cy = self._draw_section_header(surface, "BOTTLENECKS", panel_x, pad, inner_w, cy, compact=True)
+
+        top_tiles: list = []
+        if engine is not None and engine.metrics_snapshots:
+            top_tiles = engine.metrics_snapshots[-1]["top_congested_tiles"]
+
+        if not top_tiles:
+            none_surf = self._font_small.render("None detected", True, COLOR_TEXT_SECONDARY)
+            surface.blit(none_surf, (panel_x + pad, cy))
+            cy += none_surf.get_height() + 1
+        else:
+            for col, row, ratio in top_tiles[:5]:
+                sev_color = self._health_color(100 - ratio * 100)
+                pygame.draw.rect(surface, sev_color,
+                                 pygame.Rect(panel_x + pad, cy + 3, 8, 8))
+                t_surf = self._font_small.render(
+                    f"  ({col},{row}) — {ratio:.2f}", True, COLOR_TEXT_SECONDARY
+                )
+                surface.blit(t_surf, (panel_x + pad + 10, cy))
+                cy += t_surf.get_height() + 1
+        cy += 2
+
+        # ==================================================================
+        # STATS
+        # ==================================================================
+        cy = self._draw_section_header(surface, "STATS", panel_x, pad, inner_w, cy, compact=True)
+
+        if engine is not None:
+            avg_travel = 0.0
+            if engine.metrics_snapshots:
+                avg_travel = engine.metrics_snapshots[-1]["average_travel_time"]
+            stats = [
+                f"Active: {len(engine.active_vehicles)}",
+                f"Completed: {engine.total_trips_completed}",
+                f"Avg travel: {avg_travel:.0f} ticks",
+            ]
+        else:
+            stats = ["Active: —", "Completed: —", "Avg travel: —"]
+
+        for line in stats:
+            lbl = self._font_small.render(line, True, COLOR_TEXT_PRIMARY)
+            surface.blit(lbl, (panel_x + pad, cy))
+            cy += lbl.get_height() + 1
+        cy += 3
+
+        # ==================================================================
+        # SHORTCUTS
+        # ==================================================================
+        cy = self._draw_section_header(surface, "SHORTCUTS", panel_x, pad, inner_w, cy, compact=True)
+        shortcuts = [
+            "Space: Pause / Resume",
+            "1/2/4/8: Speed",
+            "R: Back to Edit",
+            "Esc: Deselect car",
+        ]
+        for line in shortcuts:
+            lbl = self._font_small.render(line, True, COLOR_TEXT_SECONDARY)
+            surface.blit(lbl, (panel_x + pad, cy))
+            cy += 13
+
+    def render_congestion_chart(self, snapshots: list) -> pygame.Surface | None:
+        """
+        Render a matplotlib chart of congestion + health over time.
+        Returns a pygame Surface (RGBA), or None if snapshots is empty.
+        Called by App only when snapshot count changes — not every frame.
+        """
+        if not snapshots:
+            return None
+
+        window     = snapshots[-CHART_WINDOW:]
+        ticks      = [s["tick"]              for s in window]
+        congestion = [s["congestion_index"]  for s in window]
+        health     = [s["city_health_score"] for s in window]
+
+        fig, ax = plt.subplots(figsize=(2.6, 1.4), dpi=90)
+        fig.patch.set_facecolor("#14141e")
+        ax.set_facecolor("#1a1a2e")
+
+        ax.plot(ticks, congestion, color="#ff5555", linewidth=1.2, label="Congestion")
+        ax.plot(ticks, health,     color="#55ff88", linewidth=1.2, label="Health")
+        ax.set_ylim(0, 100)
+        ax.tick_params(colors="#888899", labelsize=6)
+        for spine in ax.spines.values():
+            spine.set_color("#333355")
+        ax.legend(
+            fontsize=6,
+            loc="upper left",
+            facecolor="#14141e",
+            edgecolor="#333355",
+            labelcolor="#aaaacc",
+        )
+
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        raw  = bytes(canvas.buffer_rgba())
+        size = canvas.get_width_height()
+        plt.close(fig)
+        return pygame.image.frombuffer(raw, size, "RGBA")
 
 
 # ---------------------------------------------------------------------------
@@ -897,4 +1560,13 @@ def _brighten(color: tuple[int, int, int], amount: int) -> tuple[int, int, int]:
         min(255, color[0] + amount),
         min(255, color[1] + amount),
         min(255, color[2] + amount),
+    )
+
+
+def _darken(color: tuple[int, int, int], amount: int) -> tuple[int, int, int]:
+    """Return color with each channel decreased by amount, clamped to 0."""
+    return (
+        max(0, color[0] - amount),
+        max(0, color[1] - amount),
+        max(0, color[2] - amount),
     )

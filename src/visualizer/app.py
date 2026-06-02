@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 import tkinter
 import tkinter.filedialog
 from enum import Enum, auto
@@ -16,10 +17,18 @@ from src.config import (
     TRANSITION_DURATION_MS,
     TOOL_PAINT,
     TOOL_SELECT,
+    SIMULATE_SPEEDS,
+    DEFAULT_SPEED,
+    SPEED_SLOW,
+    SPEED_NORMAL,
+    SPEED_FAST,
+    SPEED_ULTRA,
+    VEHICLE_SIZE_FRACTION,
 )
 from src.world.world import World
 from src.world.tile import TileType, TrafficControl
 from src.visualizer.renderer import Renderer
+from src.simulation.simulation_engine import SimulationEngine
 
 
 class AppMode(Enum):
@@ -43,9 +52,9 @@ class App:
         self._clock = pygame.time.Clock()
 
         # Mode / world state
-        self._mode:   AppMode      = AppMode.STARTUP
-        self._world:  World | None = None
-        self._engine               = None   # reserved for Stage 3+
+        self._mode:   AppMode                   = AppMode.STARTUP
+        self._world:  World | None              = None
+        self._engine: SimulationEngine | None   = None
 
         # Renderer
         self._renderer = Renderer(self._screen)
@@ -81,6 +90,20 @@ class App:
         # Hovered tile (updated every MOUSEMOTION in edit mode)
         self._hovered_tile: tuple[int, int] | None = None
 
+        # ------------------------------------------------------------------
+        # Simulate mode state
+        # ------------------------------------------------------------------
+
+        self._sim_paused:                bool                  = True
+        self._sim_speed_index:           int                   = 0
+        self._selected_vehicle                                 = None
+        self._chart_surface:             pygame.Surface | None = None
+        self._chart_last_snapshot_count: int                   = 0
+
+        # Tick advancement timing
+        self._sim_tick_accumulator: float = 0.0
+        self._sim_last_time:        float = 0.0
+
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
@@ -90,6 +113,7 @@ class App:
             dt_ms = self._clock.tick(FPS)
             self._handle_events()
             self._update_transition(dt_ms)
+            self._advance_simulation()
             self._draw()
             pygame.display.flip()
 
@@ -127,6 +151,8 @@ class App:
                     self._handle_click_startup(event.pos)
                 elif self._mode == AppMode.EDIT:
                     self._handle_mousedown_edit(event.pos)
+                elif self._mode == AppMode.SIMULATE:
+                    self._handle_click_simulate(event.pos)
 
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if self._mode == AppMode.EDIT:
@@ -135,6 +161,8 @@ class App:
             elif event.type == pygame.KEYDOWN:
                 if self._mode == AppMode.EDIT:
                     self._handle_keydown_edit(event)
+                elif self._mode == AppMode.SIMULATE:
+                    self._handle_keydown_simulate(event)
 
     # ------------------------------------------------------------------
     # Startup click handler
@@ -337,6 +365,89 @@ class App:
         ]
 
     # ------------------------------------------------------------------
+    # Simulate mode — handlers
+    # ------------------------------------------------------------------
+
+    def _handle_click_simulate(self, pos: tuple[int, int]) -> None:
+        r = self._renderer
+
+        # Playback control buttons (set by renderer each frame)
+        if r._btn_sim_pause is not None and r._btn_sim_pause.collidepoint(pos):
+            self._sim_paused = not self._sim_paused
+            return
+        if r._btn_sim_reset is not None and r._btn_sim_reset.collidepoint(pos):
+            self._start_transition(AppMode.EDIT)
+            return
+        for i, rect in enumerate(r._btn_sim_speeds):
+            if rect.collidepoint(pos):
+                self._sim_speed_index = i
+                return
+        if r._btn_inspector_close is not None and r._btn_inspector_close.collidepoint(pos):
+            self._selected_vehicle = None
+            return
+
+        # Vehicle hit detection
+        if self._engine is None:
+            return
+        half = max(2, int(r._tile_size * VEHICLE_SIZE_FRACTION) // 2)
+        for vehicle in self._engine.active_vehicles:
+            vpx, vpy = r._vehicle_pixel_pos(vehicle)
+            hit_rect = pygame.Rect(
+                int(vpx) - half, int(vpy) - half, half * 2, half * 2
+            )
+            if hit_rect.collidepoint(pos):
+                self._selected_vehicle = vehicle
+                return
+
+        # Click on grid area with no vehicle hit — deselect
+        if r.get_tile_at_pixel(*pos) is not None:
+            self._selected_vehicle = None
+
+    def _handle_keydown_simulate(self, event: pygame.event.Event) -> None:
+        key = event.key
+        if key == pygame.K_SPACE:
+            self._sim_paused = not self._sim_paused
+        elif key == pygame.K_r:
+            self._start_transition(AppMode.EDIT)
+        elif key == pygame.K_1:
+            self._sim_speed_index = 0
+        elif key == pygame.K_2:
+            self._sim_speed_index = 1
+        elif key == pygame.K_4:
+            self._sim_speed_index = 2
+        elif key == pygame.K_8:
+            self._sim_speed_index = 3
+        elif key == pygame.K_ESCAPE:
+            self._selected_vehicle = None
+
+    def _advance_simulation(self) -> None:
+        if self._engine is None or self._sim_paused or self._transitioning:
+            self._sim_last_time = time.time()
+            return
+
+        now = time.time()
+        dt  = now - self._sim_last_time
+        self._sim_last_time = now
+
+        ticks_per_second = SIMULATE_SPEEDS[self._sim_speed_index][0] * self._engine.speed
+        self._sim_tick_accumulator += dt * ticks_per_second
+
+        # Cap to prevent spiral-of-death on frame drops
+        max_ticks_per_frame = 20
+        ticks_to_step = min(int(self._sim_tick_accumulator), max_ticks_per_frame)
+        self._sim_tick_accumulator -= ticks_to_step
+
+        for _ in range(ticks_to_step):
+            self._engine.step()
+
+        # Refresh chart if new snapshots arrived
+        if len(self._engine.metrics_snapshots) != self._chart_last_snapshot_count:
+            self._chart_surface = self._renderer.render_congestion_chart(
+                self._engine.metrics_snapshots
+            )
+            self._chart_last_snapshot_count = len(self._engine.metrics_snapshots)
+
+    # ------------------------------------------------------------------
     # Transitions
     # ------------------------------------------------------------------
 
@@ -370,6 +481,23 @@ class App:
                 w, h = self._screen.get_size()
                 self._renderer.recalculate_layout(w, h, self._world)
                 self._transition_midpoint_passed = True
+
+                if self._transition_target_mode.name == "SIMULATE":
+                    if self._world is not None:
+                        self._engine = SimulationEngine(self._world)
+                        self._engine.start()
+                        self._sim_paused = True
+                        self._sim_tick_accumulator = 0.0
+                        self._sim_last_time = time.time()
+                        self._selected_vehicle = None
+                        self._chart_surface = None
+                        self._chart_last_snapshot_count = 0
+
+                elif self._transition_target_mode.name == "EDIT":
+                    # Returning to edit — destroy engine, keep world intact
+                    self._engine = None
+                    self._selected_vehicle = None
+                    self._chart_surface = None
 
             # Second half — fade back in, no zoom
             self._transition_alpha = (1.0 - eased) * 2.0 * 255.0
@@ -418,6 +546,12 @@ class App:
             hovered_speed_limit=hovered_speed_limit,
             hovered_tile_type=hovered_tile_type_name,
             tooltip_pos=pygame.mouse.get_pos(),
+            # Simulate mode
+            engine=self._engine,
+            sim_paused=self._sim_paused,
+            sim_speed_index=self._sim_speed_index,
+            selected_vehicle=self._selected_vehicle,
+            chart_surface=self._chart_surface,
         )
 
     # ------------------------------------------------------------------

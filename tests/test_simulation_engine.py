@@ -159,10 +159,10 @@ def test_set_speed_invalid_raises():
 
 @pytest.mark.parametrize("tick,expected", [
     (0,      "12:00 AM"),
-    (600,    "01:00 AM"),
-    (3600,   "06:00 AM"),
-    (7200,   "12:00 PM"),
-    (10800,  "06:00 PM"),
+    (1200,   "01:00 AM"),
+    (7200,   "06:00 AM"),
+    (14400,  "12:00 PM"),
+    (21600,  "06:00 PM"),
 ])
 def test_time_of_day(tick, expected):
     eng = make_engine()
@@ -175,9 +175,9 @@ def test_time_of_day(tick, expected):
 # ------------------------------------------------------------------
 
 @pytest.mark.parametrize("tick,expected", [
-    (0,    "early_morning"),
-    (3600, "morning_rush"),
-    (9600, "evening_rush"),
+    (0,     "early_morning"),
+    (7200,  "morning_rush"),
+    (19200, "evening_rush"),
 ])
 def test_current_period(tick, expected):
     eng = make_engine()
